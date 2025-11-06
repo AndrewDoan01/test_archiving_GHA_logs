@@ -1,0 +1,101 @@
+name: Archive Logs to Releases (Real-time) (fixed)
+
+on:
+  workflow_run:
+    workflows: ["*"] # Trigger cho TẤT CẢ workflows
+    types: [completed]
+  workflow_dispatch: # allow manual run
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  archive-single-run:
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download workflow logs
+        uses: actions/github-script@v7
+        id: download-logs
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+                      const _core = require('@actions/core');
+
+            const run = context.payload.workflow_run;
+            const runId = run.id;
+
+            // per-run directory
+            const safeWorkflowName = (run.name || `workflow-${runId}`).replace(/[^a-z0-9]/gi, '-').toLowerCase();
+            const timestamp = new Date(run.created_at).toISOString().replace(/[:.]/g, '-');
+            const runDirName = `${safeWorkflowName}-${runId}-${timestamp}`;
+            const logsDir = path.join('archived-logs', runDirName);
+            if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+
+            const filename = `${runDirName}.zip`;
+            const filepath = path.join(logsDir, filename);
+
+            try {
+              const logs = await github.rest.actions.downloadWorkflowRunLogs({ owner: context.repo.owner, repo: context.repo.repo, run_id: runId });
+              if (!logs || !logs.data) throw new Error('No logs data returned');
+              fs.writeFileSync(filepath, Buffer.from(logs.data));
+
+              const jobs = await github.rest.actions.listJobsForWorkflowRun({ owner: context.repo.owner, repo: context.repo.repo, run_id: runId });
+
+              const metadata = { workflow: { name: run.name, id: run.workflow_id }, run: { id: runId, number: run.run_number, status: run.status, conclusion: run.conclusion, created_at: run.created_at }, git: { branch: run.head_branch, commit_sha: run.head_sha }, actor: { login: run.actor.login }, jobs: jobs.data.jobs.map(j => ({ name: j.name, status: j.status, conclusion: j.conclusion })), archive: { filename, size_bytes: logs.data.byteLength, archived_at: new Date().toISOString() } };
+
+              fs.writeFileSync(path.join(logsDir, `${safeWorkflowName}-${runId}-metadata.json`), JSON.stringify(metadata, null, 2));
+
+              const summaryLines = [
+                `Workflow: ${run.name}`,
+                `Run Number: #${run.run_number}`,
+                `Status: ${run.conclusion}`,
+                `Branch: ${run.head_branch}`,
+                `Actor: ${run.actor.login}`,
+                `Log File: ${filename}`,
+              ];
+              fs.writeFileSync(path.join(logsDir, `${safeWorkflowName}-${runId}-summary.txt`), summaryLines.join('\n'));
+
+                        _core.setOutput('run_dir', runDirName);
+                        _core.setOutput('archive_filename', filename);
+                        _core.setOutput('archive_size', logs.data.byteLength);
+
+                      } catch (err) {
+                        _core.setFailed(err.message);
+                      }
+
+      - name: Create compressed archive
+        id: compress
+        run: |
+          ARCHIVE_NAME="logs-run-${{ github.event.workflow_run.id }}.tar.gz"
+          cd archived-logs
+          tar -czf "../${ARCHIVE_NAME}" "${{ steps.download-logs.outputs.run_dir }}"
+          cd ..
+          sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
+          md5sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.md5"
+          rm -rf "archived-logs/${{ steps.download-logs.outputs.run_dir }}"
+          echo "archive_name=${ARCHIVE_NAME}" >> $GITHUB_OUTPUT
+          echo "archive_size_mb=$(stat -c%s \"${ARCHIVE_NAME}\")" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: logs-run-${{ github.event.workflow_run.id }}
+          name: "Logs: ${{ github.event.workflow_run.name }} #${{ github.event.workflow_run.run_number }}"
+          body: |
+            Auto-archived workflow logs.
+          files: |
+            ${{ steps.compress.outputs.archive_name }}
+            ${{ steps.compress.outputs.archive_name }}.sha256
+            ${{ steps.compress.outputs.archive_name }}.md5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
