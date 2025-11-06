@@ -30,7 +30,7 @@ jobs:
           script: |
             const fs = require('fs');
             const path = require('path');
-                      const _core = require('@actions/core');
+                      // `core` is provided by actions/github-script; don't require it here
 
             const daysBack = parseInt('${{ github.event.inputs.days_back }}' || '7');
             const cutoffDate = new Date();
@@ -115,8 +115,8 @@ jobs:
               workflows: archiveIndex,
             }, null, 2));
 
-                      _core.setOutput('total_archived', totalArchived);
-                      _core.setOutput('total_size_mb', (totalSize / 1024 / 1024).toFixed(2));
+                      core.setOutput('total_archived', totalArchived);
+                      core.setOutput('total_size_mb', (totalSize / 1024 / 1024).toFixed(2));
 
       - name: Create archive
         id: compress

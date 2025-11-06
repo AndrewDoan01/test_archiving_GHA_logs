@@ -29,7 +29,7 @@ jobs:
           script: |
             const fs = require('fs');
             const path = require('path');
-                      const _core = require('@actions/core');
+                      // `core` is provided by actions/github-script; don't require it here
 
             const run = context.payload.workflow_run;
             const runId = run.id;
@@ -65,12 +65,12 @@ jobs:
               ];
               fs.writeFileSync(path.join(logsDir, `${safeWorkflowName}-${runId}-summary.txt`), summaryLines.join('\n'));
 
-                        _core.setOutput('run_dir', runDirName);
-                        _core.setOutput('archive_filename', filename);
-                        _core.setOutput('archive_size', logs.data.byteLength);
+                        core.setOutput('run_dir', runDirName);
+                        core.setOutput('archive_filename', filename);
+                        core.setOutput('archive_size', logs.data.byteLength);
 
                       } catch (err) {
-                        _core.setFailed(err.message);
+                        core.setFailed(err.message);
                       }
 
       - name: Create compressed archive
