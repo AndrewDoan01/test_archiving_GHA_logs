@@ -97,19 +97,19 @@ jobs:
               throw error;
             }
 
-            - name: Create compressed archive
-              id: compress
-              env:
-                RUN_DIR: ${{ steps.download.outputs.run_dir }}
-              run: |
-                  ARCHIVE_NAME="logs-run-${{ github.event.workflow_run.id }}.tar.gz"
-                  # compress only the run-specific directory
-                  tar -czf "${ARCHIVE_NAME}" -C "${RUN_DIR}" .
-                  sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
-                  echo "archive_name=${ARCHIVE_NAME}" >> $GITHUB_OUTPUT
-                  SIZE=$(stat -c%s "${ARCHIVE_NAME}")
-                  SIZE_MB=$(echo "scale=2; ${SIZE} / 1024 / 1024" | bc)
-                  echo "archive_size_mb=${SIZE_MB}" >> $GITHUB_OUTPUT
+      - name: Create compressed archive
+        id: compress
+        env:
+          RUN_DIR: ${{ steps.download.outputs.run_dir }}
+        run: |
+          ARCHIVE_NAME="logs-run-${{ github.event.workflow_run.id }}.tar.gz"
+          # compress only the run-specific directory
+          tar -czf "${ARCHIVE_NAME}" -C "${RUN_DIR}" .
+          sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256"
+          echo "archive_name=${ARCHIVE_NAME}" >> $GITHUB_OUTPUT
+          SIZE=$(stat -c%s "${ARCHIVE_NAME}")
+          SIZE_MB=$(echo "scale=2; ${SIZE} / 1024 / 1024" | bc)
+          echo "archive_size_mb=${SIZE_MB}" >> $GITHUB_OUTPUT
 
       - name: Create release in logs repo
         uses: softprops/action-gh-release@v1
